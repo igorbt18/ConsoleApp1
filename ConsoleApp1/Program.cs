@@ -13,12 +13,25 @@ class Usuario
     }
 }
 
+class Transacao
+{
+    public decimal Valor { get; }
+    public DateTime Data { get; }
+
+    public Transacao(decimal valor, DateTime data)
+    {
+        Valor = valor;
+        Data = data;
+    }
+}
+
 class Conta
 {
     public int Numero { get; set; }
     public string Tipo { get; set; }
     public decimal Saldo { get; set; }
-    public Usuario Dono { get; set; } // Referência ao objeto Usuario
+    public Usuario Dono { get; set; }
+    public List<Transacao> HistoricoTransacoes { get; }
 
     public Conta(int numero, string tipo, Usuario dono)
     {
@@ -26,11 +39,13 @@ class Conta
         Tipo = tipo;
         Saldo = 0;
         Dono = dono;
+        HistoricoTransacoes = new List<Transacao>();
     }
 
     public void Depositar(decimal valor)
     {
         Saldo += valor;
+        RegistrarTransacao(valor);
         Console.WriteLine($"Depósito de R${valor:C} realizado com sucesso. Novo saldo: R${Saldo:C}");
     }
 
@@ -43,6 +58,7 @@ class Conta
         }
 
         Saldo -= valor;
+        RegistrarTransacao(-valor); // O valor é negativo para representar um saque
         Console.WriteLine($"Saque de R${valor:C} realizado com sucesso. Novo saldo: R${Saldo:C}");
     }
 
@@ -56,15 +72,29 @@ class Conta
 
         Saldo -= valor;
         destino.Depositar(valor);
+        RegistrarTransacao(-valor); // O valor é negativo para representar uma transferência de saída
+        destino.RegistrarTransacao(valor); // O valor é positivo para representar uma transferência de entrada na conta de destino
         Console.WriteLine($"Transferência de R${valor:C} para a conta {destino.Numero} realizada com sucesso. Novo saldo: R${Saldo:C}");
+    }
+
+    private void RegistrarTransacao(decimal valor)
+    {
+        HistoricoTransacoes.Add(new Transacao(valor, DateTime.Now));
     }
 }
 
-class Banco
+interface IContaRepository
+{
+    Conta AcessarContaPorCPF(string cpf);
+    Conta AcessarContaPorNome(string nome);
+    void GerarNovaConta(Usuario usuario);
+}
+
+class ContaRepository : IContaRepository
 {
     private List<Conta> contas;
 
-    public Banco()
+    public ContaRepository()
     {
         contas = new List<Conta>();
     }
@@ -85,41 +115,131 @@ class Banco
         }
         return null;
     }
+
+    public Conta AcessarContaPorNome(string nome)
+    {
+        foreach (var conta in contas)
+        {
+            if (conta.Dono.Nome == nome)
+            {
+                return conta;
+            }
+        }
+        return null;
+    }
+
+    public void GerarNovaConta(Usuario usuario)
+    {
+        Random random = new Random();
+        int numeroConta = random.Next(1000, 9999);
+        Conta novaConta = new Conta(numeroConta, "PF", usuario);
+        novaConta.Depositar(1000); // Adiciona um depósito inicial de R$ 1000 para a nova conta
+        novaConta.Depositar(500); // Adiciona outro depósito de R$ 500 para a nova conta
+        AdicionarConta(novaConta);
+        Console.WriteLine($"Nova conta gerada para {usuario.Nome} (CPF: {usuario.CPF}). Número da conta: {novaConta.Numero}");
+    }
+}
+
+class ContaController
+{
+    private readonly IContaRepository contaRepository;
+
+    public ContaController(IContaRepository repository)
+    {
+        contaRepository = repository;
+    }
+
+    public void AtivarPorCPF(string cpf)
+    {
+        Conta conta = contaRepository.AcessarContaPorCPF(cpf);
+        if (conta != null)
+        {
+            Console.WriteLine($"Conta encontrada: {conta.Tipo}, CPF: {cpf}, Nome: {conta.Dono.Nome}, Saldo: {conta.Saldo:C}");
+            Console.WriteLine("Histórico de Transações:");
+            foreach (var transacao in conta.HistoricoTransacoes)
+            {
+                Console.WriteLine($"- Data: {transacao.Data}, Valor: {transacao.Valor:C}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("Conta não encontrada para o CPF fornecido.");
+        }
+    }
+
+    public void AtivarPorNome(string nome)
+    {
+        Conta conta = contaRepository.AcessarContaPorNome(nome);
+        if (conta != null)
+        {
+            Console.WriteLine($"Conta encontrada: {conta.Tipo}, CPF: {conta.Dono.CPF}, Nome: {nome}, Saldo: {conta.Saldo:C}");
+            Console.WriteLine("Histórico de Transações:");
+            foreach (var transacao in conta.HistoricoTransacoes)
+            {
+                Console.WriteLine($"- Data: {transacao.Data}, Valor: {transacao.Valor:C}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("Conta não encontrada para o nome fornecido.");
+        }
+    }
 }
 
 class Program
 {
     static void Main(string[] args)
     {
-        Banco banco = new Banco();
+        IContaRepository contaRepository = new ContaRepository();
+        ContaController contaController = new ContaController(contaRepository);
 
-        Usuario JamesRodrigues = new Usuario("James Rodrigues", "400.289.221.23");
-        Usuario LucasMoura = new Usuario("Lucas Moura", "580.239.271.28");
+        // Adicionando usuários James e Lucas
+        Usuario James = new Usuario("James", "12345678901");
+        Usuario Lucas = new Usuario("Lucas", "98765432101");
 
-        Conta contaJames = new Conta(4002, "PF", JamesRodrigues);
-        contaJames.Depositar(20000);
+        // Gerando contas para os usuários
+        contaRepository.GerarNovaConta(James);
+        contaRepository.GerarNovaConta(Lucas);
 
-        Conta contaLucas = new Conta(8002, "PF", LucasMoura);
-        contaLucas.Depositar(400);
-
-        banco.AdicionarConta(contaJames);
-        banco.AdicionarConta(contaLucas);
-
-        // Função para acessar a conta por CPF
-        Console.Write("Digite o CPF para acessar a conta: ");
-        string cpf = Console.ReadLine();
-        Conta conta = banco.AcessarContaPorCPF(cpf);
-
-        if (conta != null)
+        while (true)
         {
-            Console.WriteLine($"Conta encontrada: {conta.Tipo}, CPF: {cpf}, Nome: {conta.Dono.Nome}, Saldo: {conta.Saldo:C}");
-        }
-        else
-        {
-            Console.WriteLine("Conta não encontrada.");
-        }
+            Console.WriteLine("Menu de Busca de Conta:");
+            Console.WriteLine("1. Buscar por CPF");
+            Console.WriteLine("2. Buscar por Nome");
+            Console.WriteLine("3. Limpar tela");
+            Console.WriteLine("4. Sair");
 
-        Console.ReadLine(); // Mantém o terminal aberto
+            Console.Write("Escolha uma opção: ");
+            string opcao = Console.ReadLine();
+
+            switch (opcao)
+            {
+                case "1":
+                    Console.Write("Digite o CPF: ");
+                    string cpf = Console.ReadLine();
+                    contaController.AtivarPorCPF(cpf);
+                    Console.WriteLine("Pressione Enter para continuar...");
+                    Console.ReadLine();
+                    Console.Clear();
+                    break;
+                case "2":
+                    Console.Write("Digite o Nome: ");
+                    string nome = Console.ReadLine();
+                    contaController.AtivarPorNome(nome);
+                    Console.WriteLine("Pressione Enter para continuar...");
+                    Console.ReadLine();
+                    Console.Clear();
+                    break;
+                case "3":
+                    Console.Clear();
+                    break;
+                case "4":
+                    Console.WriteLine("Saindo do programa.");
+                    return;
+                default:
+                    Console.WriteLine("Opção inválida. Tente novamente.");
+                    break;
+            }
+        }
     }
 }
-
